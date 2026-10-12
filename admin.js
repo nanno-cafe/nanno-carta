@@ -17,10 +17,10 @@ db?.auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT')showLogin();});
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{document.querySelectorAll('[data-tab]').forEach(x=>{x.setAttribute('aria-pressed',String(x===b));$(`#${x.dataset.tab}Panel`).hidden=x!==b;});applyTheme(data.settings);});
 document.querySelectorAll('[data-close]').forEach(b=>b.onclick=()=>{if(!busy)b.closest('dialog').close();});
 document.querySelectorAll('dialog').forEach(d=>d.addEventListener('cancel',e=>{if(busy)e.preventDefault();}));
-function editCategory(id){categoryId=id;const c=data.categories.find(x=>x.id===id)||{name:'',position:0,active:true};const f=$('#categoryForm');f.elements.name.value=c.name;f.position.value=c.position;f.active.checked=c.active;message('#categoryStatus','');$('#categoryTitle').textContent=id?'Editar categoría':'Nueva categoría';$('#categoryDialog').showModal();}
+function editCategory(id){categoryId=id;$('#deleteCategory').hidden=!id;const c=data.categories.find(x=>x.id===id)||{name:'',position:0,active:true};const f=$('#categoryForm');f.elements.name.value=c.name;f.position.value=c.position;f.active.checked=c.active;message('#categoryStatus','');$('#categoryTitle').textContent=id?'Editar categoría':'Nueva categoría';$('#categoryDialog').showModal();}
 $('#newCategory').onclick=()=>editCategory(null);$('#adminCategories').onclick=e=>{const b=e.target.closest('[data-category]');if(b)editCategory(b.dataset.category);};
 $('#categoryForm').onsubmit=e=>{e.preventDefault();const f=e.currentTarget;run(f,'#categoryStatus',async()=>{if(!authorized)return;const values={name:f.elements.name.value.trim(),position:Number(f.position.value),active:f.active.checked};if(!values.name)throw validation('Ingresá el nombre de la categoría.');const request=categoryId?db.from('menu_categories').update(values).eq('id',categoryId):db.from('menu_categories').insert(values);checkResult(await request.select('id'));await refresh();$('#categoryDialog').close();message('#adminStatus','Categoría guardada.');});};
-function editProduct(id){if(!data.categories.length){message('#adminStatus','Primero creá una categoría para tus productos.');return;}productId=id;const p=data.products.find(x=>x.id===id)||{name:'',description:'',price_cents:0,category_id:data.categories[0].id,position:0,active:true,available:true,featured:false};const f=$('#productForm');f.reset();for(const key of ['name','description','position'])f.elements[key].value=p[key];f.category_id.innerHTML=data.categories.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.active?'':' (oculta)'}</option>`).join('');f.category_id.value=p.category_id;f.price.value=p.price_cents?(p.price_cents/100).toString():'';for(const key of ['active','available','featured'])f.elements[key].checked=p[key];if(objectURL){URL.revokeObjectURL(objectURL);objectURL=null;}$('#imagePreview').src=safeImage(p.image_url);message('#productStatus','');$('#productTitle').textContent=id?'Editar producto':'Nuevo producto';$('#productDialog').showModal();}
+function editProduct(id){if(!data.categories.length){message('#adminStatus','Primero creá una categoría para tus productos.');return;}productId=id;$('#deleteProduct').hidden=!id;const p=data.products.find(x=>x.id===id)||{name:'',description:'',price_cents:0,category_id:data.categories[0].id,position:0,active:true,available:true,featured:false};const f=$('#productForm');f.reset();for(const key of ['name','description','position'])f.elements[key].value=p[key];f.category_id.innerHTML=data.categories.map(c=>`<option value="${esc(c.id)}">${esc(c.name)}${c.active?'':' (oculta)'}</option>`).join('');f.category_id.value=p.category_id;f.price.value=p.price_cents?(p.price_cents/100).toString():'';for(const key of ['active','available','featured'])f.elements[key].checked=p[key];if(objectURL){URL.revokeObjectURL(objectURL);objectURL=null;}$('#imagePreview').src=safeImage(p.image_url);message('#productStatus','');$('#productTitle').textContent=id?'Editar producto':'Nuevo producto';$('#productDialog').showModal();}
 $('#newProduct').onclick=()=>editProduct(null);$('#adminProducts').onclick=e=>{const b=e.target.closest('[data-product]');if(b)editProduct(b.dataset.product);};
 function validatePhoto(file){if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024)throw validation('Elegí una imagen JPG, PNG o WebP de hasta 5 MB.');}
 $('#productForm').photo.onchange=e=>{const file=e.target.files[0];if(!file)return;try{validatePhoto(file);if(objectURL)URL.revokeObjectURL(objectURL);objectURL=URL.createObjectURL(file);$('#imagePreview').src=objectURL;$('#productForm').remove_image.checked=false;message('#productStatus','');}catch(error){message('#productStatus',error.userMessage);e.target.value='';}};
@@ -28,4 +28,35 @@ $('#productForm').onsubmit=e=>{e.preventDefault();const f=e.currentTarget;run(f,
 $('#settingsForm').onchange=()=>{const f=$('#settingsForm');applyTheme({theme:f.theme.value,animations_enabled:f.animations_enabled.checked});};
 $('#settingsForm').onsubmit=e=>{e.preventDefault();const f=e.currentTarget;run(f,'#settingsStatus',async()=>{if(!authorized)return;const whatsapp=f.whatsapp.value.trim();if(whatsapp&&!/^[1-9]\d{7,14}$/.test(whatsapp))throw validation('El WhatsApp debe tener entre 8 y 15 dígitos, con código de país y sin signos.');if(f.accepting_orders.checked&&(!whatsapp||!f.address.value.trim()))throw validation('Completá WhatsApp y dirección antes de activar pedidos.');const values={theme:f.theme.value,animations_enabled:f.animations_enabled.checked,whatsapp,address:f.address.value.trim(),hours:f.hours.value.trim(),intro:f.intro.value.trim(),accepting_orders:f.accepting_orders.checked};if(!values.intro)throw validation('Escribí el mensaje de bienvenida.');checkResult(await db.from('menu_settings').update(values).eq('id',true).select('id'));await refresh();message('#settingsStatus','Diseño y datos publicados en la carta.');});};
 document.addEventListener('error',e=>{if(e.target instanceof HTMLImageElement&&e.target.getAttribute('src')!=='./assets/coffee-art.svg')e.target.src='./assets/coffee-art.svg';},true);
+async function removeItem(kind){
+  if(busy||!authorized)return;
+  const product=kind==='product';
+  const id=product?productId:categoryId;
+  const item=(product?data.products:data.categories).find(x=>x.id===id);
+  if(!item)return;
+  const status=product?'#productStatus':'#categoryStatus';
+  if(!product&&data.products.some(p=>p.category_id===id)){
+    message(status,'Esta categoría tiene productos, incluidos los ocultos. Movelos a otra categoría o eliminalos primero.');return;
+  }
+  if(!confirm(`¿Eliminar ${product?'el producto':'la categoría'} «${item.name}»? Esta acción no se puede deshacer.`))return;
+  busy=true;
+  const form=$(product?'#productForm':'#categoryForm');
+  const buttons=[...form.querySelectorAll('button')];buttons.forEach(b=>b.disabled=true);
+  message(status,'Eliminando…');
+  try{
+    const result=await db.from(product?'menu_products':'menu_categories').delete().eq('id',id).select('id');
+    if(result.error)throw result.error;
+    if(!result.data?.length)throw validation('No se eliminó el registro. Revisá tus permisos o actualizá el panel.');
+    // Ocultar el elemento localmente aunque falle la actualización posterior.
+    if(product){data.products=data.products.filter(p=>p.id!==id);productId=null;}
+    else{data.categories=data.categories.filter(c=>c.id!==id);categoryId=null;}
+    form.closest('dialog').close();render();
+    message('#adminStatus',product?'Producto eliminado.':'Categoría eliminada.');
+    try{await refresh();}catch{message('#adminStatus','El registro se eliminó. No pudimos actualizar el resto de la carta; recargá el panel.');}
+  }catch(error){
+    message(status,['23503','23001'].includes(error.code)?'La categoría tiene productos. Movelos a otra categoría o eliminalos antes de continuar.':error.code==='42501'?'No se pudo eliminar. Verificá tu permiso de administrador y que se haya ejecutado 03_eliminar.sql en Supabase.':error.userMessage||fail(error));
+  }finally{buttons.forEach(b=>b.disabled=false);busy=false;}
+}
+$('#deleteProduct').onclick=()=>removeItem('product');
+$('#deleteCategory').onclick=()=>removeItem('category');
 enter();
